@@ -131,7 +131,7 @@ int main(int argc, char* argv[]) {
     scaleFactor = fmin(screenWidth / (2 * maX), screenHeight / (2 * maY));
     offsetX = 0.0;
     offsetY = 0.0;
-    drawGraph(renderer, &graph, screenWidth, screenHeight); // Disegno il grafico
+    //drawGraph(renderer, &graph, screenWidth, screenHeight); // Disegno il grafico
     signal(SIGINT, handle_signal); // Gestore di segnale, chiama handle_signal quando riceve SIGINT
     SDL_Event e; // Variabile per ricevere un evento
     int quit = 0;
@@ -220,7 +220,7 @@ int main(int argc, char* argv[]) {
             }
 
             moveNodes(net_forces, &graph); // Aggiorna la posizione dei nodi
-            drawGraph(renderer, &graph, screenWidth, screenHeight);
+            //drawGraph(renderer, &graph, screenWidth, screenHeight);
             free(net_forces);
 
             if (quit || stop) {
@@ -239,6 +239,7 @@ int main(int argc, char* argv[]) {
             i += 1;
             SDL_Delay(5);
         }
+        drawGraph(renderer, &graph, screenWidth, screenHeight);
     }
 
     // Cleanup SDL
