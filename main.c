@@ -139,52 +139,8 @@ int main(int argc, char* argv[]) {
     int stable_count = 0;
     int stable_threshold = 10; // Numero di iterazioni consecutive stabili necessarie per interrompere il ciclo
 
-    while (!quit && !stop) {
-        while (SDL_PollEvent(&e) != 0) { // Controllo se ci sono eventi
-            if (e.type == SDL_QUIT) {
-                quit = 1;
-            } else if (e.type == SDL_MOUSEWHEEL) { // Scorrere con la rotella del mouse
-                // Zoom in/out
-                if (e.wheel.y > 0) { // Scroll up
-                    scaleFactor *= 1.1;
-                } else if (e.wheel.y < 0) { // Scroll down
-                    scaleFactor /= 1.1;
-                }
-                drawGraph(renderer, &graph, screenWidth, screenHeight); //Aggiorno il grafico
-            }else if (e.type == SDL_FINGERMOTION){ // Scroll da touchpad
-                if (e.tfinger.fingerId == 0 && e.type == SDL_FINGERMOTION) {
-                    // Calcola la differenza di posizione tra due dita
-                    double scrollDistance = sqrt(pow(e.tfinger.dx, 2) + pow(e.tfinger.dy, 2));
-                    // Aggiorna scaleFactor in base a scrollDistance e alla direzione del movimento
-                    scaleFactor *= scrollDistance > 0 ? (1.0 + scrollDistance * 0.01) : 1.0; // Aumento o diminuzione dello scale factor in base alla direzione
-                    drawGraph(renderer, &graph, screenWidth, screenHeight);
-                }
-
-            }
-            else if (e.type == SDL_KEYDOWN) {
-                // Gestione del movimento con i tasti freccia
-                switch (e.key.keysym.sym) {
-                    case SDLK_LEFT:
-                        offsetX += 500.0* (1/scaleFactor); // Spostamento a sinistra di 10 pixel
-                        drawGraph(renderer, &graph, screenWidth, screenHeight);
-                        break;
-                    case SDLK_RIGHT:
-                        offsetX -= 500.0* (1/scaleFactor); // Spostamento a destra di 10 pixel
-                        drawGraph(renderer, &graph, screenWidth, screenHeight);
-                        break;
-                    case SDLK_UP:
-                        offsetY += 500.0* (1/scaleFactor); // Spostamento verso l'alto di 10 pixel
-                        drawGraph(renderer, &graph, screenWidth, screenHeight);
-                        break;
-                    case SDLK_DOWN:
-                        offsetY -= 500.0* (1/scaleFactor); // Spostamento verso il basso di 10 pixel
-                        drawGraph(renderer, &graph, screenWidth, screenHeight);
-                        break;
-                    default:
-                        break;
-                }
-            }
-        }
+   
+        
         while (i < it) {
             Force* net_forces = initializeForceVector(graph); // Inizializza il vettore delle forze
             getMaxNodeDimensions(&graph, &maX, &maY);
@@ -237,11 +193,11 @@ int main(int argc, char* argv[]) {
                 }
             }
             i += 1;
-            SDL_Delay(5);
+            //SDL_Delay(5);
         }
-        drawGraph(renderer, &graph, screenWidth, screenHeight);
-    }
-
+        //drawGraph(renderer, &graph, screenWidth, screenHeight);
+    
+    writeFinalPositions("final_positions.txt", &graph);
     // Cleanup SDL
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
@@ -250,6 +206,23 @@ int main(int argc, char* argv[]) {
     free(graph.edges);
     return 0;
 }
+
+
+
+void writeFinalPositions(char* file_name, SimpleGraph* graph) {
+    FILE* output = fopen(file_name, "w");
+    if (!output) {
+        fprintf(stderr, "Errore nell'apertura del file %s.\n", file_name);
+        return;
+    }
+
+    for (size_t i = 0; i < graph->node_count; i++) {
+        fprintf(output, "Nodo %zu: x = %.2f, y = %.2f\n", i, graph->nodes[i].x, graph->nodes[i].y);
+    }
+
+    fclose(output);
+}
+
 
 void drawGraph(SDL_Renderer* renderer, SimpleGraph* graph, int screenWidth, int screenHeight) {
     SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255); // Colore bianco
