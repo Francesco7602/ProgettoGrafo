@@ -4,6 +4,7 @@
 #include <string.h>
 #include <time.h>
 #include <pthread.h>
+#include <SDL2/SDL.h>
 #include <signal.h>
 #include <unistd.h>
 
@@ -61,6 +62,7 @@ void handle_signal(int sig) {
 }
 
 // Prototipi delle funzioni
+void drawGraph(SDL_Renderer* renderer, SimpleGraph* graph, int screenWidth, int screenHeight);
 SimpleGraph readGraphFile(char* file_name);
 void calculateRepulsion(Force* net_forces, SimpleGraph* graph, size_t start, size_t end);
 void calculateAttraction(Force* net_forces, SimpleGraph* graph, size_t start, size_t end);
@@ -70,7 +72,6 @@ Force* initializeForceVector(SimpleGraph graph);
 void moveNodes(Force* net_forces, SimpleGraph* graph);
 void repeat(int* response);
 void getMaxNodeDimensions(SimpleGraph* graph, double* maxX, double* maxY);
-void writeFinalPositions(char* file_name, SimpleGraph* graph);
 
 // Funzione principale
 int main(int argc, char* argv[]) {
@@ -88,14 +89,42 @@ int main(int argc, char* argv[]) {
         return 1;
     }
     fclose(input);
-    NUM_THREADS = sysconf(_SC_NPROCESSORS_ONLN) *8;
+    NUM_THREADS = sysconf(_SC_NPROCESSORS_ONLN)*2;
     SimpleGraph graph = readGraphFile(file_name);
 
-
+    // Initialize SDL
+    if (SDL_Init(SDL_INIT_VIDEO) != 0) {
+        fprintf(stderr, "SDL_Init Error: %s\n", SDL_GetError());
+        exit(EXIT_FAILURE);
+    }
+    SDL_DisplayMode display_mode;
+    if (SDL_GetDesktopDisplayMode(0, &display_mode) != 0) {
+        fprintf(stderr, "SDL_GetDesktopDisplayMode Error: %s\n", SDL_GetError());
+        SDL_Quit();
+        exit(EXIT_FAILURE);
+    }
     int screenWidth = display_mode.w - 10;
     int screenHeight = display_mode.h - 10;
     k = sqrt((screenWidth * screenHeight) / graph.node_count);
 
+    SDL_Window* window = SDL_CreateWindow("Graph Visualization",
+                                          SDL_WINDOWPOS_UNDEFINED,
+                                          SDL_WINDOWPOS_UNDEFINED,
+                                          screenWidth, screenHeight,
+                                          SDL_WINDOW_FULLSCREEN);
+    if (window == NULL) {
+        printf("Window could not be created! SDL_Error: %s\n", SDL_GetError());
+        SDL_Quit();
+        return 1;
+    }
+
+    SDL_Renderer* renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
+    if (renderer == NULL) {
+        printf("Renderer could not be created! SDL_Error: %s\n", SDL_GetError());
+        SDL_DestroyWindow(window);
+        SDL_Quit();
+        return 1;
+    }
 
     double maX, maY;
     getMaxNodeDimensions(&graph, &maX, &maY);// Calcola le dimensioni massime dei nodi per adattare le dimensioni della finestra
@@ -104,13 +133,58 @@ int main(int argc, char* argv[]) {
     offsetY = 0.0;
     //drawGraph(renderer, &graph, screenWidth, screenHeight); // Disegno il grafico
     signal(SIGINT, handle_signal); // Gestore di segnale, chiama handle_signal quando riceve SIGINT
+    SDL_Event e; // Variabile per ricevere un evento
     int quit = 0;
     int i = 0;
     int stable_count = 0;
     int stable_threshold = 10; // Numero di iterazioni consecutive stabili necessarie per interrompere il ciclo
 
-   
-        
+    while (!quit && !stop) {
+        while (SDL_PollEvent(&e) != 0) { // Controllo se ci sono eventi
+            if (e.type == SDL_QUIT) {
+                quit = 1;
+            } else if (e.type == SDL_MOUSEWHEEL) { // Scorrere con la rotella del mouse
+                // Zoom in/out
+                if (e.wheel.y > 0) { // Scroll up
+                    scaleFactor *= 1.1;
+                } else if (e.wheel.y < 0) { // Scroll down
+                    scaleFactor /= 1.1;
+                }
+                drawGraph(renderer, &graph, screenWidth, screenHeight); //Aggiorno il grafico
+            }else if (e.type == SDL_FINGERMOTION){ // Scroll da touchpad
+                if (e.tfinger.fingerId == 0 && e.type == SDL_FINGERMOTION) {
+                    // Calcola la differenza di posizione tra due dita
+                    double scrollDistance = sqrt(pow(e.tfinger.dx, 2) + pow(e.tfinger.dy, 2));
+                    // Aggiorna scaleFactor in base a scrollDistance e alla direzione del movimento
+                    scaleFactor *= scrollDistance > 0 ? (1.0 + scrollDistance * 0.01) : 1.0; // Aumento o diminuzione dello scale factor in base alla direzione
+                    drawGraph(renderer, &graph, screenWidth, screenHeight);
+                }
+
+            }
+            else if (e.type == SDL_KEYDOWN) {
+                // Gestione del movimento con i tasti freccia
+                switch (e.key.keysym.sym) {
+                    case SDLK_LEFT:
+                        offsetX += 500.0* (1/scaleFactor); // Spostamento a sinistra di 10 pixel
+                        drawGraph(renderer, &graph, screenWidth, screenHeight);
+                        break;
+                    case SDLK_RIGHT:
+                        offsetX -= 500.0* (1/scaleFactor); // Spostamento a destra di 10 pixel
+                        drawGraph(renderer, &graph, screenWidth, screenHeight);
+                        break;
+                    case SDLK_UP:
+                        offsetY += 500.0* (1/scaleFactor); // Spostamento verso l'alto di 10 pixel
+                        drawGraph(renderer, &graph, screenWidth, screenHeight);
+                        break;
+                    case SDLK_DOWN:
+                        offsetY -= 500.0* (1/scaleFactor); // Spostamento verso il basso di 10 pixel
+                        drawGraph(renderer, &graph, screenWidth, screenHeight);
+                        break;
+                    default:
+                        break;
+                }
+            }
+        }
         while (i < it) {
             Force* net_forces = initializeForceVector(graph); // Inizializza il vettore delle forze
             getMaxNodeDimensions(&graph, &maX, &maY);
@@ -163,33 +237,43 @@ int main(int argc, char* argv[]) {
                 }
             }
             i += 1;
-            //SDL_Delay(5);
+            SDL_Delay(5);
         }
-        //drawGraph(renderer, &graph, screenWidth, screenHeight);
-    
-    writeFinalPositions("final_positions.txt", &graph);
+        drawGraph(renderer, &graph, screenWidth, screenHeight);
+    }
 
+    // Cleanup SDL
+    SDL_DestroyRenderer(renderer);
+    SDL_DestroyWindow(window);
+    SDL_Quit();
     free(graph.nodes);
     free(graph.edges);
     return 0;
 }
 
-
-
-void writeFinalPositions(char* file_name, SimpleGraph* graph) {
-    FILE* output = fopen(file_name, "w");
-    if (!output) {
-        fprintf(stderr, "Errore nell'apertura del file %s.\n", file_name);
-        return;
+void drawGraph(SDL_Renderer* renderer, SimpleGraph* graph, int screenWidth, int screenHeight) {
+    SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255); // Colore bianco
+    SDL_RenderClear(renderer); // Pulisce lo schermo
+    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255); // Colore nero per gli archi
+    for (size_t i = 0; i < graph->edge_count; i++) {
+        size_t node1 = graph->edges[i].start;
+        size_t node2 = graph->edges[i].end;
+        SDL_RenderDrawLine(renderer,
+                           (int)((graph->nodes[node1].x + offsetX) * scaleFactor + screenWidth / 2),
+                           (int)((graph->nodes[node1].y + offsetY) * scaleFactor + screenHeight / 2),
+                           (int)((graph->nodes[node2].x + offsetX) * scaleFactor + screenWidth / 2),
+                           (int)((graph->nodes[node2].y + offsetY) * scaleFactor + screenHeight / 2)); //Disegna la linea tra due punti
     }
 
+    SDL_SetRenderDrawColor(renderer, 255, 0, 0, 255); // Colore rosso per i nodi
     for (size_t i = 0; i < graph->node_count; i++) {
-        fprintf(output, "Nodo %zu: x = %.2f, y = %.2f\n", i, graph->nodes[i].x, graph->nodes[i].y);
+        int x = (int)((graph->nodes[i].x + offsetX) * scaleFactor + screenWidth / 2);
+        int y = (int)((graph->nodes[i].y + offsetY) * scaleFactor + screenHeight / 2);
+        SDL_Rect rect = {x - (2* scaleFactor), y - (2* scaleFactor), 4* scaleFactor, 4* scaleFactor};
+        SDL_RenderFillRect(renderer, &rect); //Disegno i nodi
     }
-
-    fclose(output);
+    SDL_RenderPresent(renderer); // Disegna su schermo
 }
-
 
 SimpleGraph readGraphFile(char* file_name) {
     FILE* input = fopen(file_name, "r");
