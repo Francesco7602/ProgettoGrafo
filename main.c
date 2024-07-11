@@ -70,6 +70,7 @@ Force* initializeForceVector(SimpleGraph graph);
 void moveNodes(Force* net_forces, SimpleGraph* graph);
 void repeat(int* response);
 void getMaxNodeDimensions(SimpleGraph* graph, double* maxX, double* maxY);
+void writeFinalPositions(char* file_name, SimpleGraph* graph);
 
 // Funzione principale
 int main(int argc, char* argv[]) {
@@ -90,39 +91,11 @@ int main(int argc, char* argv[]) {
     NUM_THREADS = sysconf(_SC_NPROCESSORS_ONLN) *8;
     SimpleGraph graph = readGraphFile(file_name);
 
-    // Initialize SDL
-    if (SDL_Init(SDL_INIT_VIDEO) != 0) {
-        fprintf(stderr, "SDL_Init Error: %s\n", SDL_GetError());
-        exit(EXIT_FAILURE);
-    }
-    SDL_DisplayMode display_mode;
-    if (SDL_GetDesktopDisplayMode(0, &display_mode) != 0) {
-        fprintf(stderr, "SDL_GetDesktopDisplayMode Error: %s\n", SDL_GetError());
-        SDL_Quit();
-        exit(EXIT_FAILURE);
-    }
+
     int screenWidth = display_mode.w - 10;
     int screenHeight = display_mode.h - 10;
     k = sqrt((screenWidth * screenHeight) / graph.node_count);
 
-    SDL_Window* window = SDL_CreateWindow("Graph Visualization",
-                                          SDL_WINDOWPOS_UNDEFINED,
-                                          SDL_WINDOWPOS_UNDEFINED,
-                                          screenWidth, screenHeight,
-                                          SDL_WINDOW_FULLSCREEN);
-    if (window == NULL) {
-        printf("Window could not be created! SDL_Error: %s\n", SDL_GetError());
-        SDL_Quit();
-        return 1;
-    }
-
-    SDL_Renderer* renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
-    if (renderer == NULL) {
-        printf("Renderer could not be created! SDL_Error: %s\n", SDL_GetError());
-        SDL_DestroyWindow(window);
-        SDL_Quit();
-        return 1;
-    }
 
     double maX, maY;
     getMaxNodeDimensions(&graph, &maX, &maY);// Calcola le dimensioni massime dei nodi per adattare le dimensioni della finestra
@@ -131,7 +104,6 @@ int main(int argc, char* argv[]) {
     offsetY = 0.0;
     //drawGraph(renderer, &graph, screenWidth, screenHeight); // Disegno il grafico
     signal(SIGINT, handle_signal); // Gestore di segnale, chiama handle_signal quando riceve SIGINT
-    SDL_Event e; // Variabile per ricevere un evento
     int quit = 0;
     int i = 0;
     int stable_count = 0;
@@ -196,10 +168,7 @@ int main(int argc, char* argv[]) {
         //drawGraph(renderer, &graph, screenWidth, screenHeight);
     
     writeFinalPositions("final_positions.txt", &graph);
-    // Cleanup SDL
-    SDL_DestroyRenderer(renderer);
-    SDL_DestroyWindow(window);
-    SDL_Quit();
+
     free(graph.nodes);
     free(graph.edges);
     return 0;
