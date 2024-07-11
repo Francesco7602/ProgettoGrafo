@@ -45,100 +45,133 @@ void calculateAttraction(Force* net_forces, SimpleGraph* graph, size_t start, si
 Force* initializeForceVector(SimpleGraph graph);
 void moveNodes(Force* net_forces, SimpleGraph* graph);
 void getMaxNodeDimensions(SimpleGraph* graph, double* maxX, double* maxY);
+void writeNodeData(FILE* output, SimpleGraph* graph, int start, int end);
+void writeEdgeData(FILE* output, SimpleGraph* graph, int start, int end);
 
 int main(int argc, char* argv[]) {
+    int rank, size;
     MPI_Init(&argc, &argv);
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &size);
 
-    int world_rank, world_size;
-    MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
-    MPI_Comm_size(MPI_COMM_WORLD, &world_size);
-
-    if (argc < 5) {
-        if (world_rank == 0) {
-            printf("Uso corretto: %s nome_file iterazioni temperatura peso\n", argv[0]);
+    if (argc < 2) {
+        if (rank == 0) {
+            printf("Uso corretto: %s nome_file_grafo\n", argv[0]);
         }
         MPI_Finalize();
         return 1;
     }
 
     char* file_name = argv[1];
-    int it = atoi(argv[2]);
-    temperature = atof(argv[3]);
-    peso = atoi(argv[4]);
-
     SimpleGraph graph;
-    if (world_rank == 0) {
+
+    if (rank == 0) {
         graph = readGraphFile(file_name);
     }
 
-    MPI_Bcast(&graph.node_count, 1, MPI_UNSIGNED_LONG, 0, MPI_COMM_WORLD);
-    MPI_Bcast(&graph.edge_count, 1, MPI_UNSIGNED_LONG, 0, MPI_COMM_WORLD);
+    // Broadcast delle informazioni sui nodi e archi
+    MPI_Bcast(&graph.node_count, 1, MPI_INT, 0, MPI_COMM_WORLD);
+    MPI_Bcast(&graph.edge_count, 1, MPI_INT, 0, MPI_COMM_WORLD);
 
-    if (world_rank != 0) {
+    if (rank != 0) {
         graph.nodes = malloc(graph.node_count * sizeof(Node));
         graph.edges = malloc(graph.edge_count * sizeof(Edge));
     }
 
-    MPI_Bcast(graph.nodes, graph.node_count * sizeof(Node), MPI_BYTE, 0, MPI_COMM_WORLD);
-    MPI_Bcast(graph.edges, graph.edge_count * sizeof(Edge), MPI_BYTE, 0, MPI_COMM_WORLD);
+    // Broadcast dei dati dei nodi e archi
+    MPI_Bcast(graph.nodes, graph.node_count, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+    MPI_Bcast(graph.edges, graph.edge_count, MPI_INT, 0, MPI_COMM_WORLD);
 
-    int nodes_per_process = graph.node_count / world_size;
-    int my_start = world_rank * nodes_per_process;
-    int my_end = (world_rank == world_size - 1) ? graph.node_count : (world_rank + 1) * nodes_per_process;
-
-    k = sqrt((2240 * 1400) / graph.node_count);
+    int screenWidth = 2240 - 10;
+    int screenHeight = 1400 - 10;
+    double k = sqrt((screenWidth * screenHeight) / graph.node_count);
 
     double maX, maY;
     getMaxNodeDimensions(&graph, &maX, &maY);
-    scaleFactor = fmin(2240 / (2 * maX), 1400 / (2 * maY));
-    offsetX = 0.0;
-    offsetY = 0.0;
+    double scaleFactor = fmin(screenWidth / (2 * maX), screenHeight / (2 * maY));
 
-    for (int i = 0; i < it; i++) {
-        Force* net_forces = initializeForceVector(graph);
+    double temperature = 500.0;
+    int it = 100;
+    int i;
+    int stable_count = 0;
+    int stable_threshold = 10;
+    int movement_detected = 0;
 
-        calculateRepulsion(net_forces, &graph, my_start, my_end);
-        calculateAttraction(net_forces, &graph, my_start, my_end);
+    for (i = 0; i < it; i++) {
+        Force* net_forces = initializeForceVector(&graph);
 
-        Force* global_forces = malloc(graph.node_count * sizeof(Force));
-        MPI_Allgather(net_forces + my_start, nodes_per_process * sizeof(Force), MPI_BYTE,
-                      global_forces, nodes_per_process * sizeof(Force), MPI_BYTE,
-                      MPI_COMM_WORLD);
+        int nodes_per_process = graph.node_count / size;
+        int start = rank * nodes_per_process;
+        int end = (rank == size - 1) ? graph.node_count : (rank + 1) * nodes_per_process;
 
-        if (world_rank == 0) {
-            moveNodes(global_forces, &graph);
-        }
+        calculateRepulsion(net_forces, &graph, start, end);
 
-        MPI_Bcast(graph.nodes, graph.node_count * sizeof(Node), MPI_BYTE, 0, MPI_COMM_WORLD);
+        MPI_Allgather(MPI_IN_PLACE, 0, MPI_DATATYPE_NULL, net_forces, sizeof(Force) * graph.node_count, MPI_BYTE, MPI_COMM_WORLD);
 
+        int edges_per_process = graph.edge_count / size;
+        start = rank * edges_per_process;
+        end = (rank == size - 1) ? graph.edge_count : (rank + 1) * edges_per_process;
+
+        calculateAttraction(net_forces, &graph, start, end);
+
+        MPI_Allgather(MPI_IN_PLACE, 0, MPI_DATATYPE_NULL, net_forces, sizeof(Force) * graph.node_count, MPI_BYTE, MPI_COMM_WORLD);
+
+        moveNodes(net_forces, &graph);
         free(net_forces);
-        free(global_forces);
 
         if (temperature > 1.0) {
             temperature *= TEMPERATURE_DECAY_RATE;
         }
+
+        if (movement_detected < MIN_MOVEMENT_THRESHOLD) {
+            stable_count++;
+            if (stable_count >= stable_threshold) {
+                break;
+            }
+        } else {
+            stable_count = 0;
+        }
+    }
+// Scrivi i dati su file
+    char output_filename[100];
+    sprintf(output_filename, "out_%d.txt", rank);
+    FILE* output = fopen(output_filename, "w");
+    if (!output) {
+        printf("Processo %d: Impossibile aprire il file di output.\n", rank);
+        MPI_Abort(MPI_COMM_WORLD, 1);
     }
 
-    if (world_rank == 0) {
-        FILE* output = fopen("out.txt", "w");
-        fprintf(output, "%zu %d\n", graph.node_count, peso);
-        for (size_t i = 0; i < graph.node_count; i++) {
-            fprintf(output, "%zu %f %f\n", i, graph.nodes[i].x, graph.nodes[i].y);
-        }
-        fprintf(output, "%zu\n", graph.edge_count);
-        for (size_t i = 0; i < graph.edge_count; i++) {
-            fprintf(output, "%zu %zu\n", graph.edges[i].start, graph.edges[i].end);
-        }
-        fclose(output);
-    }
+    writeNodeData(output, &graph, local_start_node, local_end_node);
+    writeEdgeData(output, &graph, local_start_edge, local_end_edge);
 
-    if (world_rank != 0) {
-        free(graph.nodes);
-        free(graph.edges);
+    fclose(output);
+
+    // Codice per il controllo di interruzione e output finale
+    if (rank == 0) {
+        FILE* final_output = fopen("out_final.txt", "w");
+        if (!final_output) {
+            printf("Processo %d: Impossibile aprire il file di output finale.\n", rank);
+            MPI_Abort(MPI_COMM_WORLD, 1);
+        }
+        // Codice per scrivere il file finale
+        fclose(final_output);
     }
 
     MPI_Finalize();
     return 0;
+}
+// Funzione per scrivere i dati dei nodi su file
+void writeNodeData(FILE* output, SimpleGraph* graph, int start, int end) {
+    for (int i = start; i < end; i++) {
+        fprintf(output, "%zu %f %f\n", i, graph->nodes[i].x, graph->nodes[i].y);
+    }
+}
+
+// Funzione per scrivere i dati degli archi su file
+void writeEdgeData(FILE* output, SimpleGraph* graph, int start, int end) {
+    for (int i = start; i < end; i++) {
+        fprintf(output, "%zu %zu\n", graph->edges[i].start, graph->edges[i].end);
+    }
 }
 
 SimpleGraph readGraphFile(char* file_name) {
