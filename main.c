@@ -4,7 +4,6 @@
 #include <string.h>
 #include <time.h>
 #include <pthread.h>
-#include <SDL2/SDL.h>
 #include <signal.h>
 #include <unistd.h>
 
@@ -62,7 +61,6 @@ void handle_signal(int sig) {
 }
 
 // Prototipi delle funzioni
-void drawGraph(SDL_Renderer* renderer, SimpleGraph* graph, int screenWidth, int screenHeight);
 SimpleGraph readGraphFile(char* file_name);
 void calculateRepulsion(Force* net_forces, SimpleGraph* graph, size_t start, size_t end);
 void calculateAttraction(Force* net_forces, SimpleGraph* graph, size_t start, size_t end);
@@ -223,30 +221,6 @@ void writeFinalPositions(char* file_name, SimpleGraph* graph) {
     fclose(output);
 }
 
-
-void drawGraph(SDL_Renderer* renderer, SimpleGraph* graph, int screenWidth, int screenHeight) {
-    SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255); // Colore bianco
-    SDL_RenderClear(renderer); // Pulisce lo schermo
-    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255); // Colore nero per gli archi
-    for (size_t i = 0; i < graph->edge_count; i++) {
-        size_t node1 = graph->edges[i].start;
-        size_t node2 = graph->edges[i].end;
-        SDL_RenderDrawLine(renderer,
-                           (int)((graph->nodes[node1].x + offsetX) * scaleFactor + screenWidth / 2),
-                           (int)((graph->nodes[node1].y + offsetY) * scaleFactor + screenHeight / 2),
-                           (int)((graph->nodes[node2].x + offsetX) * scaleFactor + screenWidth / 2),
-                           (int)((graph->nodes[node2].y + offsetY) * scaleFactor + screenHeight / 2)); //Disegna la linea tra due punti
-    }
-
-    SDL_SetRenderDrawColor(renderer, 255, 0, 0, 255); // Colore rosso per i nodi
-    for (size_t i = 0; i < graph->node_count; i++) {
-        int x = (int)((graph->nodes[i].x + offsetX) * scaleFactor + screenWidth / 2);
-        int y = (int)((graph->nodes[i].y + offsetY) * scaleFactor + screenHeight / 2);
-        SDL_Rect rect = {x - (2* scaleFactor), y - (2* scaleFactor), 4* scaleFactor, 4* scaleFactor};
-        SDL_RenderFillRect(renderer, &rect); //Disegno i nodi
-    }
-    SDL_RenderPresent(renderer); // Disegna su schermo
-}
 
 SimpleGraph readGraphFile(char* file_name) {
     FILE* input = fopen(file_name, "r");
