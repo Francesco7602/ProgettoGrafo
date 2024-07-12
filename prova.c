@@ -40,6 +40,9 @@ void calculateAttraction(Force* net_forces, SimpleGraph* graph, size_t start, si
 Force* initializeForceVector(SimpleGraph graph);
 void moveNodes(Force* net_forces, SimpleGraph* graph);
 void getMaxNodeDimensions(SimpleGraph* graph, double* maxX, double* maxY);
+int peso;
+double k, temperature;
+
 
 int main(int argc, char* argv[]) {
     MPI_Init(&argc, &argv);
@@ -58,8 +61,8 @@ int main(int argc, char* argv[]) {
 
     char* file_name = argv[1];
     int it = atoi(argv[2]);
-    double temperature = atof(argv[3]);
-    int peso = atoi(argv[4]);
+    temperature = atof(argv[3]);
+    peso = atoi(argv[4]);
 
     MPI_File input;
     MPI_File_open(MPI_COMM_WORLD, file_name, MPI_MODE_RDONLY, MPI_INFO_NULL, &input);
@@ -86,7 +89,7 @@ int main(int argc, char* argv[]) {
 
     double screenWidth = 2240 - 10;
     double screenHeight = 1400 - 10;
-    double k = sqrt((screenWidth * screenHeight) / graph.node_count);
+    k = sqrt((screenWidth * screenHeight) / graph.node_count);
 
     double maxX, maxY;
     getMaxNodeDimensions(&graph, &maxX, &maxY);
