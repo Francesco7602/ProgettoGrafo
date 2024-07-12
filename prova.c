@@ -8,7 +8,6 @@
 // Definizione di alcune costanti globali
 #define PI 3.14159265358979323
 #define TEMPERATURE_DECAY_RATE 0.98
-#define MIN_MOVEMENT_THRESHOLD 250 // Movimento minimo desiderato
 #define MIN_DISTANCE 10.0  // Distanza minima tra i nodi
 
 // Strutture
@@ -96,8 +95,7 @@ int main(int argc, char* argv[]) {
     double offsetY = 0.0;
 
     int quit = 0;
-    int stable_count = 0;
-    int stable_threshold = 10;
+
 
     for (int i = 0; i < it; i++) {
         Force* net_forces = initializeForceVector(graph);
@@ -122,11 +120,6 @@ int main(int argc, char* argv[]) {
         if (temperature > 1.0) {
             temperature *= TEMPERATURE_DECAY_RATE;
         }
-
-        // Verifica movimento
-        int global_movement_detected = 0;
-        MPI_Allreduce(&movement_detected, &global_movement_detected, 1, MPI_INT, MPI_MAX, MPI_COMM_WORLD);
-        movement_detected = global_movement_detected;
 
         if (quit) {
             break;
@@ -286,11 +279,7 @@ void moveNodes(Force* net_forces, SimpleGraph* graph) {
             double dy = fmin(distance, temperature) * net_forces[i].y / distance;
             graph->nodes[i].x += dx;
             graph->nodes[i].y += dy;
-            if (distance > MIN_MOVEMENT_THRESHOLD) {
-                movement_detected = 1;
-            } else {
-                movement_detected = 0;
-            }
+          
         }
     }
 }
