@@ -71,6 +71,8 @@ int main(int argc, char* argv[]) {
     if (rank == 0) {
         graph = readGraphFile(file_name);
     }
+        MPI_File_close(&input);
+
 
     // Distribuzione dei dati ai processi
     MPI_Bcast(&graph.node_count, 1, MPI_UNSIGNED_LONG, 0, MPI_COMM_WORLD);
@@ -85,7 +87,6 @@ int main(int argc, char* argv[]) {
     MPI_Scatter(graph.edges, graph.edge_count * sizeof(Edge), MPI_BYTE,
                 graph.edges, graph.edge_count * sizeof(Edge), MPI_BYTE, 0, MPI_COMM_WORLD);
 
-    MPI_File_close(&input);
 
     double screenWidth = 2240 - 10;
     double screenHeight = 1400 - 10;
