@@ -113,12 +113,13 @@ int main(int argc, char* argv[]) {
         // Calcolo dell'attrazione
         calculateAttraction(net_forces, &graph, rank * graph.edge_count / size, (rank + 1) * graph.edge_count / size);
 
-        // Sincronizzazione tra i processi
-        MPI_Barrier(MPI_COMM_WORLD);
+        
 
         moveNodes(net_forces, &graph);
 
         free(net_forces);
+        // Sincronizzazione tra i processi
+        MPI_Barrier(MPI_COMM_WORLD);
 
         // Controllo della temperatura
         if (temperature > 1.0) {
