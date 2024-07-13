@@ -105,17 +105,16 @@ int main(int argc, char* argv[]) {
     double offsetY = 0.0;
 
     int quit = 0;
-    if (rank == 0){
-            Data dati = malloc(graph.node_count * sizeof(Data));
-    }
-    else{
-            Data dati = malloc((rank * graph.node_count / size) * sizeof(Data));
-    }
+    Data dati = malloc((graph.node_count / size) * sizeof(Data));
+    
         
     
 
 
     for (int i = 0; i < it; i++) {
+        // Scatter dei nodi e degli archi
+    MPI_Scatter(graph.nodes, graph.node_count * sizeof(Node), MPI_BYTE,
+                graph.nodes, graph.node_count * sizeof(Node), MPI_BYTE, 0, MPI_COMM_WORLD);
         Force* net_forces = initializeForceVector(graph);
 
         // Calcolo della repulsione
@@ -130,6 +129,19 @@ int main(int argc, char* argv[]) {
         
 
         moveNodes(net_forces, &graph, &dati, rank * graph.node_count / size, (rank + 1) * graph.node_count / size);
+        MPI_Barrier(MPI_COMM_WORLD);
+        if (rank == 0){
+            //Data datiMomentanei = malloc((graph.node_count / size) * sizeof(Data));
+            for(int i = 1; i < size; i++){
+                MPI_Recv(dati, graph.node_count / size, MPI_UNSIGNED_LONG, i, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                for (int j = 0, j <graph.node_count / size, j++){
+                    graph.nodes[dati[j].i].x = dati[j].x;
+                    graph.nodes[dati[j].i].y = dati[j].y;
+                }
+            }else{
+                MPI_Ssend(dati, graph.node_count / size, MPI_UNSIGNED_LONG, 0, 0, MPI_COMM_WORLD);
+            }
+        }
 
         free(net_forces);
         // Sincronizzazione tra i processi
@@ -145,11 +157,11 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    // Raccolta dei risultati
+   /* Raccolta dei risultati
     MPI_Gather(rank == 0 ? MPI_IN_PLACE : graph.nodes, graph.node_count * sizeof(Node), MPI_BYTE,
                graph.nodes, graph.node_count * sizeof(Node), MPI_BYTE, 0, MPI_COMM_WORLD);
     MPI_Gather(rank == 0 ? MPI_IN_PLACE : graph.edges, graph.edge_count * sizeof(Edge), MPI_BYTE,
-               graph.edges, graph.edge_count * sizeof(Edge), MPI_BYTE, 0, MPI_COMM_WORLD);
+               graph.edges, graph.edge_count * sizeof(Edge), MPI_BYTE, 0, MPI_COMM_WORLD);*/
 
     if (rank == 0) {
         FILE* output = fopen("out.txt", "w");
@@ -173,8 +185,8 @@ int main(int argc, char* argv[]) {
         }
 
         fclose(output);
-        free(graph.nodes);
-        free(graph.edges);
+        //free(graph.nodes);
+        //free(graph.edges);
     }
 
     MPI_Finalize();
