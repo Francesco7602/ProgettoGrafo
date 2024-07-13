@@ -36,7 +36,7 @@ typedef struct {
 typedef struct {
     int i;
     double x;
-    double y
+    double y;
 } Data;
 
 // Prototipi delle funzioni
