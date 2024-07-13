@@ -69,32 +69,28 @@ int main(int argc, char* argv[]) {
     temperature = atof(argv[3]);
     peso = atoi(argv[4]);
 
-    MPI_File input;
-    MPI_File_open(MPI_COMM_WORLD, file_name, MPI_MODE_RDONLY, MPI_INFO_NULL, &input);
-
     SimpleGraph graph;
     if (rank == 0) {
         graph = readGraphFile(file_name);
     }
-    MPI_File_close(&input);
 
-    // Distribuzione dei dati ai processi
+    // Broadcast del numero di nodi e archi a tutti i processi
     MPI_Bcast(&graph.node_count, 1, MPI_UNSIGNED_LONG, 0, MPI_COMM_WORLD);
     MPI_Bcast(&graph.edge_count, 1, MPI_UNSIGNED_LONG, 0, MPI_COMM_WORLD);
 
+    // Allocazione della memoria per nodi e archi
     graph.nodes = malloc(graph.node_count * sizeof(Node));
     graph.edges = malloc(graph.edge_count * sizeof(Edge));
-
-    if (!graph.nodes || !graph.edges) {
-        fprintf(stderr, "Error allocating memory\n");
-        MPI_Abort(MPI_COMM_WORLD, 1);
+    
+    if (rank == 0) {
+        // Broadcast dei nodi e degli archi dal processo 0 a tutti i processi
+        MPI_Bcast(graph.nodes, graph.node_count * sizeof(Node), MPI_BYTE, 0, MPI_COMM_WORLD);
+        MPI_Bcast(graph.edges, graph.edge_count * sizeof(Edge), MPI_BYTE, 0, MPI_COMM_WORLD);
+    } else {
+        // Ricezione dei nodi e degli archi dagli altri processi
+        MPI_Bcast(graph.nodes, graph.node_count * sizeof(Node), MPI_BYTE, 0, MPI_COMM_WORLD);
+        MPI_Bcast(graph.edges, graph.edge_count * sizeof(Edge), MPI_BYTE, 0, MPI_COMM_WORLD);
     }
-
-    // Scatter dei nodi e degli archi
-    MPI_Scatter(graph.nodes, graph.node_count / size * sizeof(Node), MPI_BYTE,
-                graph.nodes, graph.node_count / size * sizeof(Node), MPI_BYTE, 0, MPI_COMM_WORLD);
-    MPI_Scatter(graph.edges, graph.edge_count / size * sizeof(Edge), MPI_BYTE,
-                graph.edges, graph.edge_count / size * sizeof(Edge), MPI_BYTE, 0, MPI_COMM_WORLD);
 
     double screenWidth = 2240 - 10;
     double screenHeight = 1400 - 10;
@@ -183,10 +179,10 @@ int main(int argc, char* argv[]) {
         }
 
         fclose(output);
-        free(graph.nodes);
-        free(graph.edges);
     }
 
+    free(graph.nodes);
+    free(graph.edges);
     free(dati);
     MPI_Finalize();
     return 0;
@@ -350,9 +346,9 @@ void moveNodes(Force* net_forces, SimpleGraph* graph, Data* dati, size_t start, 
         graph->nodes[i].y += dy;
 
         // Salva i dati nel vettore dati
-        dati[i].i = i;
-        dati[i].x = graph->nodes[i].x;
-        dati[i].y = graph->nodes[i].y;
+        dati[i - start].i = i; // Nota: l'indice deve essere regolato
+        dati[i - start].x = graph->nodes[i].x;
+        dati[i - start].y = graph->nodes[i].y;
     }
 }
 
