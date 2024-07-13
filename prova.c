@@ -33,12 +33,18 @@ typedef struct {
     size_t edge_count;
 } SimpleGraph;
 
+typedef struct {
+    int i;
+    double x;
+    double y
+} Data;
+
 // Prototipi delle funzioni
 SimpleGraph readGraphFile(char* file_name);
 void calculateRepulsion(Force* net_forces, SimpleGraph* graph, size_t start, size_t end);
 void calculateAttraction(Force* net_forces, SimpleGraph* graph, size_t start, size_t end);
 Force* initializeForceVector(SimpleGraph graph);
-void moveNodes(Force* net_forces, SimpleGraph* graph);
+void moveNodes(Force* net_forces, SimpleGraph* graph, Data* dati, size_t start, size_t end);
 void getMaxNodeDimensions(SimpleGraph* graph, double* maxX, double* maxY);
 int peso;
 double k, temperature;
@@ -99,6 +105,14 @@ int main(int argc, char* argv[]) {
     double offsetY = 0.0;
 
     int quit = 0;
+    if (rank == 0){
+            Data dati = malloc(graph.node_count * sizeof(Data));
+    }
+    else{
+            Data dati = malloc((rank * graph.node_count / size) * sizeof(Data));
+    }
+        
+    
 
 
     for (int i = 0; i < it; i++) {
@@ -115,7 +129,7 @@ int main(int argc, char* argv[]) {
 
         
 
-        moveNodes(net_forces, &graph);
+        moveNodes(net_forces, &graph, &dati, rank * graph.node_count / size, (rank + 1) * graph.node_count / size);
 
         free(net_forces);
         // Sincronizzazione tra i processi
@@ -276,9 +290,11 @@ void calculateAttraction(Force* net_forces, SimpleGraph* graph, size_t start, si
     }
 }
 
-void moveNodes(Force* net_forces, SimpleGraph* graph) {
-    for (size_t i = 0; i < graph->node_count; i++) {
+void moveNodes(Force* net_forces, SimpleGraph* graph, Data* dati, size_t start, size_t end) {
+    int j = 0;
+    for (size_t i = start; i < end; i++) {
         double distance = sqrt(net_forces[i].x * net_forces[i].x + net_forces[i].y * net_forces[i].y);
+        dati[j].i = i;
         if (distance > 0.0) {
             double dx = fmin(distance, temperature) * net_forces[i].x / distance;
             double dy = fmin(distance, temperature) * net_forces[i].y / distance;
@@ -286,5 +302,8 @@ void moveNodes(Force* net_forces, SimpleGraph* graph) {
             graph->nodes[i].y += dy;
           
         }
+        dati[j].x = graph->nodes[i].x;
+        dati[j].y = graph->nodes[i].x;
+        j++;
     }
 }
