@@ -85,11 +85,16 @@ int main(int argc, char* argv[]) {
     graph.nodes = malloc(graph.node_count * sizeof(Node));
     graph.edges = malloc(graph.edge_count * sizeof(Edge));
 
+    if (!graph.nodes || !graph.edges) {
+        fprintf(stderr, "Error allocating memory\n");
+        MPI_Abort(MPI_COMM_WORLD, 1);
+    }
+
     // Scatter dei nodi e degli archi
-    MPI_Scatter(graph.nodes, graph.node_count * sizeof(Node), MPI_BYTE,
-                graph.nodes, graph.node_count * sizeof(Node), MPI_BYTE, 0, MPI_COMM_WORLD);
-    MPI_Scatter(graph.edges, graph.edge_count * sizeof(Edge), MPI_BYTE,
-                graph.edges, graph.edge_count * sizeof(Edge), MPI_BYTE, 0, MPI_COMM_WORLD);
+    MPI_Scatter(graph.nodes, graph.node_count / size * sizeof(Node), MPI_BYTE,
+                graph.nodes, graph.node_count / size * sizeof(Node), MPI_BYTE, 0, MPI_COMM_WORLD);
+    MPI_Scatter(graph.edges, graph.edge_count / size * sizeof(Edge), MPI_BYTE,
+                graph.edges, graph.edge_count / size * sizeof(Edge), MPI_BYTE, 0, MPI_COMM_WORLD);
 
     double screenWidth = 2240 - 10;
     double screenHeight = 1400 - 10;
@@ -104,8 +109,18 @@ int main(int argc, char* argv[]) {
     int quit = 0;
     Data* dati = malloc((graph.node_count / size) * sizeof(Data));
 
+    if (!dati) {
+        fprintf(stderr, "Error allocating memory for data\n");
+        MPI_Abort(MPI_COMM_WORLD, 1);
+    }
+
     for (int i = 0; i < it; i++) {
         Force* net_forces = initializeForceVector(graph);
+
+        if (!net_forces) {
+            fprintf(stderr, "Error allocating memory for forces\n");
+            MPI_Abort(MPI_COMM_WORLD, 1);
+        }
 
         // Calcolo della repulsione
         calculateRepulsion(net_forces, &graph, rank * graph.node_count / size, (rank + 1) * graph.node_count / size);
@@ -179,6 +194,10 @@ int main(int argc, char* argv[]) {
 
 SimpleGraph readGraphFile(char* file_name) {
     FILE* input = fopen(file_name, "r");
+    if (!input) {
+        fprintf(stderr, "Error opening file\n");
+        MPI_Abort(MPI_COMM_WORLD, 1);
+    }
     SimpleGraph graph;
     fscanf(input, "%zu", &graph.node_count); // Legge il numero totale di nodi
 
@@ -186,6 +205,11 @@ SimpleGraph readGraphFile(char* file_name) {
     size_t temp_capacity = 100; // Capacità iniziale, aumenta dinamicamente se necessario
     size_t temp_edge_count = 0;
     Edge* temp_edges = malloc(temp_capacity * sizeof(Edge));
+
+    if (!temp_edges) {
+        fprintf(stderr, "Error allocating memory for edges\n");
+        MPI_Abort(MPI_COMM_WORLD, 1);
+    }
 
     size_t node1, node2;
     double pesett;
@@ -196,6 +220,10 @@ SimpleGraph readGraphFile(char* file_name) {
                 // Aumenta la capacità dell'array temporaneo
                 temp_capacity *= 2;
                 temp_edges = realloc(temp_edges, temp_capacity * sizeof(Edge));
+                if (!temp_edges) {
+                    fprintf(stderr, "Error reallocating memory for edges\n");
+                    MPI_Abort(MPI_COMM_WORLD, 1);
+                }
             }
             temp_edges[temp_edge_count].start = node1;
             temp_edges[temp_edge_count].end = node2;
@@ -207,6 +235,10 @@ SimpleGraph readGraphFile(char* file_name) {
                 // Aumenta la capacità dell'array temporaneo
                 temp_capacity *= 2;
                 temp_edges = realloc(temp_edges, temp_capacity * sizeof(Edge));
+                if (!temp_edges) {
+                    fprintf(stderr, "Error reallocating memory for edges\n");
+                    MPI_Abort(MPI_COMM_WORLD, 1);
+                }
             }
             temp_edges[temp_edge_count].start = node1;
             temp_edges[temp_edge_count].end = node2;
@@ -216,17 +248,28 @@ SimpleGraph readGraphFile(char* file_name) {
 
     fclose(input);
 
-    // Alloca la memoria per gli archi nel grafico finale
-    graph.edge_count = temp_edge_count;
-    graph.edges = malloc(graph.edge_count * sizeof(Edge));
-    memcpy(graph.edges, temp_edges, graph.edge_count * sizeof(Edge));
-
-    // Alloca la memoria per i nodi e inizializza le posizioni
     graph.nodes = malloc(graph.node_count * sizeof(Node));
+    if (!graph.nodes) {
+        fprintf(stderr, "Error allocating memory for nodes\n");
+        MPI_Abort(MPI_COMM_WORLD, 1);
+    }
+
+    graph.edges = malloc(temp_edge_count * sizeof(Edge));
+    if (!graph.edges) {
+        fprintf(stderr, "Error allocating memory for edges\n");
+        MPI_Abort(MPI_COMM_WORLD, 1);
+    }
+
+    // Inizializza le posizioni dei nodi
+    srand(time(NULL));
     for (size_t i = 0; i < graph.node_count; i++) {
         graph.nodes[i].x = (double)rand() / RAND_MAX;
         graph.nodes[i].y = (double)rand() / RAND_MAX;
     }
+
+    // Copia gli archi temporanei nell'array finale degli archi
+    memcpy(graph.edges, temp_edges, temp_edge_count * sizeof(Edge));
+    graph.edge_count = temp_edge_count;
 
     free(temp_edges);
     return graph;
@@ -281,6 +324,10 @@ void calculateAttraction(Force* net_forces, SimpleGraph* graph, size_t start, si
 
 Force* initializeForceVector(SimpleGraph graph) {
     Force* net_forces = malloc(graph.node_count * sizeof(Force));
+    if (!net_forces) {
+        fprintf(stderr, "Error allocating memory for forces\n");
+        MPI_Abort(MPI_COMM_WORLD, 1);
+    }
     for (size_t i = 0; i < graph.node_count; i++) {
         net_forces[i].x = 0;
         net_forces[i].y = 0;
