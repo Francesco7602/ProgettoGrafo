@@ -49,7 +49,6 @@ void getMaxNodeDimensions(SimpleGraph* graph, double* maxX, double* maxY);
 int peso;
 double k, temperature;
 
-
 int main(int argc, char* argv[]) {
     MPI_Init(&argc, &argv);
 
@@ -77,8 +76,7 @@ int main(int argc, char* argv[]) {
     if (rank == 0) {
         graph = readGraphFile(file_name);
     }
-        MPI_File_close(&input);
-
+    MPI_File_close(&input);
 
     // Distribuzione dei dati ai processi
     MPI_Bcast(&graph.node_count, 1, MPI_UNSIGNED_LONG, 0, MPI_COMM_WORLD);
@@ -93,7 +91,6 @@ int main(int argc, char* argv[]) {
     MPI_Scatter(graph.edges, graph.edge_count * sizeof(Edge), MPI_BYTE,
                 graph.edges, graph.edge_count * sizeof(Edge), MPI_BYTE, 0, MPI_COMM_WORLD);
 
-
     double screenWidth = 2240 - 10;
     double screenHeight = 1400 - 10;
     k = sqrt((screenWidth * screenHeight) / graph.node_count);
@@ -105,16 +102,9 @@ int main(int argc, char* argv[]) {
     double offsetY = 0.0;
 
     int quit = 0;
-    Data dati = malloc((graph.node_count / size) * sizeof(Data));
-    
-        
-    
-
+    Data* dati = malloc((graph.node_count / size) * sizeof(Data));
 
     for (int i = 0; i < it; i++) {
-        // Scatter dei nodi e degli archi
-    MPI_Scatter(graph.nodes, graph.node_count * sizeof(Node), MPI_BYTE,
-                graph.nodes, graph.node_count * sizeof(Node), MPI_BYTE, 0, MPI_COMM_WORLD);
         Force* net_forces = initializeForceVector(graph);
 
         // Calcolo della repulsione
@@ -126,25 +116,23 @@ int main(int argc, char* argv[]) {
         // Calcolo dell'attrazione
         calculateAttraction(net_forces, &graph, rank * graph.edge_count / size, (rank + 1) * graph.edge_count / size);
 
-        
-
-        moveNodes(net_forces, &graph, &dati, rank * graph.node_count / size, (rank + 1) * graph.node_count / size);
+        moveNodes(net_forces, &graph, dati, rank * graph.node_count / size, (rank + 1) * graph.node_count / size);
         MPI_Barrier(MPI_COMM_WORLD);
-        if (rank == 0){
-            //Data datiMomentanei = malloc((graph.node_count / size) * sizeof(Data));
-            for(int i = 1; i < size; i++){
-                MPI_Recv(dati, graph.node_count / size, MPI_UNSIGNED_LONG, i, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-                for (int j = 0; j <graph.node_count / size, j++){
+
+        if (rank == 0) {
+            for (int i = 1; i < size; i++) {
+                MPI_Recv(dati, graph.node_count / size * sizeof(Data), MPI_BYTE, i, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                for (int j = 0; j < graph.node_count / size; j++) {
                     graph.nodes[dati[j].i].x = dati[j].x;
                     graph.nodes[dati[j].i].y = dati[j].y;
                 }
             }
-        }else{
-                MPI_Ssend(dati, graph.node_count / size, MPI_UNSIGNED_LONG, 0, 0, MPI_COMM_WORLD);
-            }
+        } else {
+            MPI_Ssend(dati, graph.node_count / size * sizeof(Data), MPI_BYTE, 0, 0, MPI_COMM_WORLD);
         }
 
         free(net_forces);
+
         // Sincronizzazione tra i processi
         MPI_Barrier(MPI_COMM_WORLD);
 
@@ -157,12 +145,6 @@ int main(int argc, char* argv[]) {
             break;
         }
     }
-
-   /* Raccolta dei risultati
-    MPI_Gather(rank == 0 ? MPI_IN_PLACE : graph.nodes, graph.node_count * sizeof(Node), MPI_BYTE,
-               graph.nodes, graph.node_count * sizeof(Node), MPI_BYTE, 0, MPI_COMM_WORLD);
-    MPI_Gather(rank == 0 ? MPI_IN_PLACE : graph.edges, graph.edge_count * sizeof(Edge), MPI_BYTE,
-               graph.edges, graph.edge_count * sizeof(Edge), MPI_BYTE, 0, MPI_COMM_WORLD);*/
 
     if (rank == 0) {
         FILE* output = fopen("out.txt", "w");
@@ -186,10 +168,11 @@ int main(int argc, char* argv[]) {
         }
 
         fclose(output);
-        //free(graph.nodes);
-        //free(graph.edges);
+        free(graph.nodes);
+        free(graph.edges);
     }
 
+    free(dati);
     MPI_Finalize();
     return 0;
 }
@@ -241,34 +224,12 @@ SimpleGraph readGraphFile(char* file_name) {
     // Alloca la memoria per i nodi e inizializza le posizioni
     graph.nodes = malloc(graph.node_count * sizeof(Node));
     for (size_t i = 0; i < graph.node_count; i++) {
-        graph.nodes[i].x = cos((2 * PI * i) / graph.node_count);
-        graph.nodes[i].y = sin((2 * PI * i) / graph.node_count);
+        graph.nodes[i].x = (double)rand() / RAND_MAX;
+        graph.nodes[i].y = (double)rand() / RAND_MAX;
     }
 
     free(temp_edges);
     return graph;
-}
-
-void getMaxNodeDimensions(SimpleGraph* graph, double* maxX, double* maxY) {
-    *maxX = 0.0;
-    *maxY = 0.0;
-    for (size_t i = 0; i < graph->node_count; i++) {
-        if (fabs(graph->nodes[i].x) > *maxX) {
-            *maxX = fabs(graph->nodes[i].x);
-        }
-        if (fabs(graph->nodes[i].y) > *maxY) {
-            *maxY = fabs(graph->nodes[i].y);
-        }
-    }
-}
-
-Force* initializeForceVector(SimpleGraph graph) {
-    Force* net_forces = malloc(graph.node_count * sizeof(Force));
-    for (size_t i = 0; i < graph.node_count; i++) {
-        net_forces[i].x = 0.0;
-        net_forces[i].y = 0.0;
-    }
-    return net_forces;
 }
 
 void calculateRepulsion(Force* net_forces, SimpleGraph* graph, size_t start, size_t end) {
@@ -278,11 +239,17 @@ void calculateRepulsion(Force* net_forces, SimpleGraph* graph, size_t start, siz
                 double dx = graph->nodes[i].x - graph->nodes[j].x;
                 double dy = graph->nodes[i].y - graph->nodes[j].y;
                 double distance = sqrt(dx * dx + dy * dy);
-                if (distance > 0.0) {
-                    double force = - (k * k) / distance;
-                    net_forces[i].x -= force * dx / distance;
-                    net_forces[i].y -= force * dy / distance;
+
+                if (distance < MIN_DISTANCE) {
+                    distance = MIN_DISTANCE;
                 }
+
+                double force_magnitude = k * k / distance;
+                double force_x = force_magnitude * (dx / distance);
+                double force_y = force_magnitude * (dy / distance);
+
+                net_forces[i].x += force_x;
+                net_forces[i].y += force_y;
             }
         }
     }
@@ -292,31 +259,66 @@ void calculateAttraction(Force* net_forces, SimpleGraph* graph, size_t start, si
     for (size_t i = start; i < end; i++) {
         size_t node1 = graph->edges[i].start;
         size_t node2 = graph->edges[i].end;
-        double dx = graph->nodes[node2].x - graph->nodes[node1].x;
-        double dy = graph->nodes[node2].y - graph->nodes[node1].y;
+
+        double dx = graph->nodes[node1].x - graph->nodes[node2].x;
+        double dy = graph->nodes[node1].y - graph->nodes[node2].y;
         double distance = sqrt(dx * dx + dy * dy);
-        double force = distance * distance / k;
-        net_forces[node1].x += force * dx / distance;
-        net_forces[node1].y += force * dy / distance;
-        net_forces[node2].x -= force * dx / distance;
-        net_forces[node2].y -= force * dy / distance;
+
+        if (distance < MIN_DISTANCE) {
+            distance = MIN_DISTANCE;
+        }
+
+        double force_magnitude = distance * distance / k;
+        double force_x = force_magnitude * (dx / distance);
+        double force_y = force_magnitude * (dy / distance);
+
+        net_forces[node1].x -= force_x;
+        net_forces[node1].y -= force_y;
+        net_forces[node2].x += force_x;
+        net_forces[node2].y += force_y;
     }
 }
 
+Force* initializeForceVector(SimpleGraph graph) {
+    Force* net_forces = malloc(graph.node_count * sizeof(Force));
+    for (size_t i = 0; i < graph.node_count; i++) {
+        net_forces[i].x = 0;
+        net_forces[i].y = 0;
+    }
+    return net_forces;
+}
+
 void moveNodes(Force* net_forces, SimpleGraph* graph, Data* dati, size_t start, size_t end) {
-    int j = 0;
     for (size_t i = start; i < end; i++) {
-        double distance = sqrt(net_forces[i].x * net_forces[i].x + net_forces[i].y * net_forces[i].y);
-        dati[j].i = i;
-        if (distance > 0.0) {
-            double dx = fmin(distance, temperature) * net_forces[i].x / distance;
-            double dy = fmin(distance, temperature) * net_forces[i].y / distance;
-            graph->nodes[i].x += dx;
-            graph->nodes[i].y += dy;
-          
+        double dx = net_forces[i].x;
+        double dy = net_forces[i].y;
+
+        double displacement = sqrt(dx * dx + dy * dy);
+        if (displacement > temperature) {
+            dx = dx / displacement * temperature;
+            dy = dy / displacement * temperature;
         }
-        dati[j].x = graph->nodes[i].x;
-        dati[j].y = graph->nodes[i].x;
-        j++;
+
+        graph->nodes[i].x += dx;
+        graph->nodes[i].y += dy;
+
+        // Salva i dati nel vettore dati
+        dati[i].i = i;
+        dati[i].x = graph->nodes[i].x;
+        dati[i].y = graph->nodes[i].y;
+    }
+}
+
+void getMaxNodeDimensions(SimpleGraph* graph, double* maxX, double* maxY) {
+    *maxX = 0.0;
+    *maxY = 0.0;
+
+    for (size_t i = 0; i < graph->node_count; i++) {
+        if (graph->nodes[i].x > *maxX) {
+            *maxX = graph->nodes[i].x;
+        }
+        if (graph->nodes[i].y > *maxY) {
+            *maxY = graph->nodes[i].y;
+        }
     }
 }
