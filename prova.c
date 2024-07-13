@@ -86,8 +86,8 @@ int main(int argc, char* argv[]) {
         graph.nodes = malloc(graph.node_count * sizeof(Node));
         graph.edges = malloc(graph.edge_count * sizeof(Edge));
     }
-    fprintf(stderr, "%d\n", graph.node_count);
-    fprintf(stderr, "%d\n", graph.edge_count);
+    fprintf(stderr, "%zu\n", graph.node_count);
+    fprintf(stderr, "%zu\n", graph.edge_count);
 
     if (rank == 0) {
         // Broadcast dei nodi e degli archi dal processo 0 a tutti i processi
