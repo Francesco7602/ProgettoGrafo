@@ -134,11 +134,12 @@ int main(int argc, char* argv[]) {
             //Data datiMomentanei = malloc((graph.node_count / size) * sizeof(Data));
             for(int i = 1; i < size; i++){
                 MPI_Recv(dati, graph.node_count / size, MPI_UNSIGNED_LONG, i, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-                for (int j = 0, j <graph.node_count / size, j++){
+                for (int j = 0; j <graph.node_count / size, j++){
                     graph.nodes[dati[j].i].x = dati[j].x;
                     graph.nodes[dati[j].i].y = dati[j].y;
                 }
-            }else{
+            }
+        }else{
                 MPI_Ssend(dati, graph.node_count / size, MPI_UNSIGNED_LONG, 0, 0, MPI_COMM_WORLD);
             }
         }
