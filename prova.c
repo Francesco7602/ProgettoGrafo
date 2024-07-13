@@ -33,21 +33,24 @@ typedef struct {
     size_t edge_count;
 } SimpleGraph;
 
-typedef struct {
-    int i;
-    double x;
-    double y;
-} Data;
+
 
 // Prototipi delle funzioni
 SimpleGraph readGraphFile(char* file_name);
 void calculateRepulsion(Force* net_forces, SimpleGraph* graph, size_t start, size_t end);
 void calculateAttraction(Force* net_forces, SimpleGraph* graph, size_t start, size_t end);
 Force* initializeForceVector(SimpleGraph graph);
-void moveNodes(Force* net_forces, SimpleGraph* graph, Data* dati, size_t start, size_t end);
+void moveNodes(Force* net_forces, SimpleGraph* graph, size_t start, size_t end);
 void getMaxNodeDimensions(SimpleGraph* graph, double* maxX, double* maxY);
+
+
 int peso;
-double k, temperature;
+double temperature;
+double k; // Distanza ideale
+double scaleFactor; // Fattore di scala iniziale
+double offsetX; // Offeset iniziale
+double offsetY;
+
 
 int main(int argc, char* argv[]) {
     MPI_Init(&argc, &argv);
@@ -78,10 +81,14 @@ int main(int argc, char* argv[]) {
     MPI_Bcast(&graph.node_count, 1, MPI_UNSIGNED_LONG, 0, MPI_COMM_WORLD);
     MPI_Bcast(&graph.edge_count, 1, MPI_UNSIGNED_LONG, 0, MPI_COMM_WORLD);
 
-    // Allocazione della memoria per nodi e archi
-    graph.nodes = malloc(graph.node_count * sizeof(Node));
-    graph.edges = malloc(graph.edge_count * sizeof(Edge));
-    
+    if (rank != 0) {
+        // Allocazione della memoria per nodi e archi sugli altri processi
+        graph.nodes = malloc(graph.node_count * sizeof(Node));
+        graph.edges = malloc(graph.edge_count * sizeof(Edge));
+    }
+    fprintf(stderr, "%d\n", graph.node_count);
+    fprintf(stderr, "%d\n", graph.edge_count);
+
     if (rank == 0) {
         // Broadcast dei nodi e degli archi dal processo 0 a tutti i processi
         MPI_Bcast(graph.nodes, graph.node_count * sizeof(Node), MPI_BYTE, 0, MPI_COMM_WORLD);
@@ -92,6 +99,8 @@ int main(int argc, char* argv[]) {
         MPI_Bcast(graph.edges, graph.edge_count * sizeof(Edge), MPI_BYTE, 0, MPI_COMM_WORLD);
     }
 
+
+
     double screenWidth = 2240 - 10;
     double screenHeight = 1400 - 10;
     k = sqrt((screenWidth * screenHeight) / graph.node_count);
@@ -101,14 +110,6 @@ int main(int argc, char* argv[]) {
     double scaleFactor = fmin(screenWidth / (2 * maxX), screenHeight / (2 * maxY));
     double offsetX = 0.0;
     double offsetY = 0.0;
-
-    int quit = 0;
-    Data* dati = malloc((graph.node_count / size) * sizeof(Data));
-
-    if (!dati) {
-        fprintf(stderr, "Error allocating memory for data\n");
-        MPI_Abort(MPI_COMM_WORLD, 1);
-    }
 
     for (int i = 0; i < it; i++) {
         Force* net_forces = initializeForceVector(graph);
@@ -126,35 +127,39 @@ int main(int argc, char* argv[]) {
 
         // Calcolo dell'attrazione
         calculateAttraction(net_forces, &graph, rank * graph.edge_count / size, (rank + 1) * graph.edge_count / size);
-
-        moveNodes(net_forces, &graph, dati, rank * graph.node_count / size, (rank + 1) * graph.node_count / size);
         MPI_Barrier(MPI_COMM_WORLD);
+
 
         if (rank == 0) {
+            Force* dati = initializeForceVector(graph);
             for (int i = 1; i < size; i++) {
-                MPI_Recv(dati, graph.node_count / size * sizeof(Data), MPI_BYTE, i, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-                for (int j = 0; j < graph.node_count / size; j++) {
-                    graph.nodes[dati[j].i].x = dati[j].x;
-                    graph.nodes[dati[j].i].y = dati[j].y;
+                MPI_Recv(dati, graph.node_count* sizeof(Force), MPI_BYTE, i, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                for (int j = 0; j < graph.node_count; j++) {
+
+                    net_forces[j].x +=dati[j].x;
+                    net_forces[j].y +=dati[j].y;
                 }
             }
+            moveNodes(net_forces, &graph, 0, graph.node_count);
         } else {
-            MPI_Ssend(dati, graph.node_count / size * sizeof(Data), MPI_BYTE, 0, 0, MPI_COMM_WORLD);
+            MPI_Ssend(net_forces, graph.node_count* sizeof(Force), MPI_BYTE, 0, 0, MPI_COMM_WORLD);
         }
-
-        free(net_forces);
-
-        // Sincronizzazione tra i processi
         MPI_Barrier(MPI_COMM_WORLD);
+        free(net_forces);
+        MPI_Barrier(MPI_COMM_WORLD);
+
+
 
         // Controllo della temperatura
         if (temperature > 1.0) {
             temperature *= TEMPERATURE_DECAY_RATE;
         }
 
-        if (quit) {
-            break;
-        }
+        MPI_Bcast(graph.nodes, graph.node_count * sizeof(Node), MPI_BYTE, 0, MPI_COMM_WORLD);
+
+        // Sincronizzazione tra i processi
+        MPI_Barrier(MPI_COMM_WORLD);
+
     }
 
     if (rank == 0) {
@@ -183,7 +188,6 @@ int main(int argc, char* argv[]) {
 
     free(graph.nodes);
     free(graph.edges);
-    free(dati);
     MPI_Finalize();
     return 0;
 }
@@ -289,6 +293,7 @@ void calculateRepulsion(Force* net_forces, SimpleGraph* graph, size_t start, siz
 
                 net_forces[i].x += force_x;
                 net_forces[i].y += force_y;
+
             }
         }
     }
@@ -298,23 +303,15 @@ void calculateAttraction(Force* net_forces, SimpleGraph* graph, size_t start, si
     for (size_t i = start; i < end; i++) {
         size_t node1 = graph->edges[i].start;
         size_t node2 = graph->edges[i].end;
-
-        double dx = graph->nodes[node1].x - graph->nodes[node2].x;
-        double dy = graph->nodes[node1].y - graph->nodes[node2].y;
+        double dx = graph->nodes[node2].x - graph->nodes[node1].x; //forse devo invertire l'ordine dei nodi, prima 1 e po 2'
+        double dy = graph->nodes[node2].y - graph->nodes[node1].y;
         double distance = sqrt(dx * dx + dy * dy);
+        double force = distance * distance / k;
+        net_forces[node1].x += force * dx / distance; //forse devo fare (force * dx / distance) e invertire i+ con - e viceversa
+        net_forces[node1].y += force * dy / distance;
+        net_forces[node2].x -= force * dx / distance;
+        net_forces[node2].y -= force * dy / distance;
 
-        if (distance < MIN_DISTANCE) {
-            distance = MIN_DISTANCE;
-        }
-
-        double force_magnitude = distance * distance / k;
-        double force_x = force_magnitude * (dx / distance);
-        double force_y = force_magnitude * (dy / distance);
-
-        net_forces[node1].x -= force_x;
-        net_forces[node1].y -= force_y;
-        net_forces[node2].x += force_x;
-        net_forces[node2].y += force_y;
     }
 }
 
@@ -331,10 +328,11 @@ Force* initializeForceVector(SimpleGraph graph) {
     return net_forces;
 }
 
-void moveNodes(Force* net_forces, SimpleGraph* graph, Data* dati, size_t start, size_t end) {
+void moveNodes(Force* net_forces, SimpleGraph* graph, size_t start, size_t end) {
     for (size_t i = start; i < end; i++) {
         double dx = net_forces[i].x;
         double dy = net_forces[i].y;
+
 
         double displacement = sqrt(dx * dx + dy * dy);
         if (displacement > temperature) {
@@ -344,11 +342,6 @@ void moveNodes(Force* net_forces, SimpleGraph* graph, Data* dati, size_t start, 
 
         graph->nodes[i].x += dx;
         graph->nodes[i].y += dy;
-
-        // Salva i dati nel vettore dati
-        dati[i - start].i = i; // Nota: l'indice deve essere regolato
-        dati[i - start].x = graph->nodes[i].x;
-        dati[i - start].y = graph->nodes[i].y;
     }
 }
 
