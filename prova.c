@@ -115,19 +115,17 @@ int main(int argc, char* argv[]) {
     double scaleFactor = fmin(screenWidth / (2 * maxX), screenHeight / (2 * maxY));
     double offsetX = 0.0;
     double offsetY = 0.0;
-
+    Force* net_forces = initializeForceVector(graph);
+    if (!net_forces) {
+        fprintf(stderr, "Error allocating memory for forces\n");
+        MPI_Abort(MPI_COMM_WORLD, 1);
+    }
     for (int i = 0; i < it; i++) {
-        Force* net_forces = initializeForceVector(graph);
-
-        if (!net_forces) {
-            fprintf(stderr, "Error allocating memory for forces\n");
-            MPI_Abort(MPI_COMM_WORLD, 1);
-        }
-
         // Calcolo della repulsione
         calculateRepulsion(net_forces, &graph, rank * graph.node_count / size, (rank + 1) * graph.node_count / size);
         // Calcolo dell'attrazione
         calculateAttraction(net_forces, &graph, rank * graph.edge_count / size, (rank + 1) * graph.edge_count / size);
+
         MPI_Barrier(MPI_COMM_WORLD);
 
         if (rank == 0) {
@@ -171,19 +169,16 @@ int main(int argc, char* argv[]) {
                         NULL, NULL, NULL, MPI_BYTE,
                         0, MPI_COMM_WORLD);
         }
-
-        MPI_Barrier(MPI_COMM_WORLD);
-        free(net_forces);
-        MPI_Barrier(MPI_COMM_WORLD);
-
-
-
         // Controllo della temperatura
         if (temperature > 1.0) {
             temperature *= TEMPERATURE_DECAY_RATE;
         }
 
         MPI_Bcast(graph.nodes, graph.node_count * sizeof(Node), MPI_BYTE, 0, MPI_COMM_WORLD);
+        for (int i = 0; i< graph.node_count; i++){
+            net_forces[i].x = 0.0;
+            net_forces[i].y = 0.0;
+        }
 
         // Sincronizzazione tra i processi
         MPI_Barrier(MPI_COMM_WORLD);
