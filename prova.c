@@ -92,8 +92,7 @@ int main(int argc, char* argv[]) {
         graph.nodes = malloc(graph.node_count * sizeof(Node));
         graph.edges = malloc(graph.edge_count * sizeof(Edge));
     }
-    //fprintf(stderr, "%d\n", graph.node_count);
-    //fprintf(stderr, "%d\n", graph.edge_count);
+
 
     if (rank == 0) {
         // Broadcast dei nodi e degli archi dal processo 0 a tutti i processi
@@ -133,13 +132,24 @@ int main(int argc, char* argv[]) {
 
         if (rank == 0) {
             Force* dati = initializeForceVector(graph);
+
             // Buffer per ricevere tutte le forze dai processi
             Force* all_forces = malloc(size * graph.node_count * sizeof(Force));
 
+            // Array per i counts e i displacements
+            int* counts = malloc(size * sizeof(int));
+            int* displacements = malloc(size * sizeof(int));
+
+            // Impostazione dei counts e dei displacements
+            for (int i = 0; i < size; i++) {
+                counts[i] = graph.node_count * sizeof(Force);
+                displacements[i] = i * graph.node_count * sizeof(Force);
+            }
+
             // Raccogliere le forze da tutti i processi
-            MPI_Gather(net_forces, graph.node_count * sizeof(Force), MPI_BYTE,
-                       all_forces, graph.node_count * sizeof(Force), MPI_BYTE,
-                       0, MPI_COMM_WORLD);
+            MPI_Gatherv(net_forces, graph.node_count * sizeof(Force), MPI_BYTE,
+                        all_forces, counts, displacements, MPI_BYTE,
+                        0, MPI_COMM_WORLD);
 
             // Sommare le forze ricevute
             for (int i = 0; i < size; i++) {
@@ -153,11 +163,13 @@ int main(int argc, char* argv[]) {
 
             // Liberare la memoria allocata
             free(all_forces);
+            free(counts);
+            free(displacements);
         } else {
             // Invio delle forze al processo radice
-            MPI_Gather(net_forces, graph.node_count * sizeof(Force), MPI_BYTE,
-                       NULL, graph.node_count * sizeof(Force), MPI_BYTE,
-                       0, MPI_COMM_WORLD);
+            MPI_Gatherv(net_forces, graph.node_count * sizeof(Force), MPI_BYTE,
+                        NULL, NULL, NULL, MPI_BYTE,
+                        0, MPI_COMM_WORLD);
         }
 
         MPI_Barrier(MPI_COMM_WORLD);
