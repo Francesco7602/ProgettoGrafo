@@ -33,6 +33,12 @@ typedef struct {
     size_t edge_count;
 } SimpleGraph;
 
+typedef struct {
+    double x;
+    double y;
+    int i;
+} ForceMomentanea;
+
 
 
 // Prototipi delle funzioni
@@ -86,8 +92,8 @@ int main(int argc, char* argv[]) {
         graph.nodes = malloc(graph.node_count * sizeof(Node));
         graph.edges = malloc(graph.edge_count * sizeof(Edge));
     }
-    fprintf(stderr, "%zu\n", graph.node_count);
-    fprintf(stderr, "%zu\n", graph.edge_count);
+    fprintf(stderr, "%d\n", graph.node_count);
+    fprintf(stderr, "%d\n", graph.edge_count);
 
     if (rank == 0) {
         // Broadcast dei nodi e degli archi dal processo 0 a tutti i processi
@@ -121,29 +127,39 @@ int main(int argc, char* argv[]) {
 
         // Calcolo della repulsione
         calculateRepulsion(net_forces, &graph, rank * graph.node_count / size, (rank + 1) * graph.node_count / size);
-
-        // Sincronizzazione tra i processi
-        MPI_Barrier(MPI_COMM_WORLD);
-
         // Calcolo dell'attrazione
         calculateAttraction(net_forces, &graph, rank * graph.edge_count / size, (rank + 1) * graph.edge_count / size);
         MPI_Barrier(MPI_COMM_WORLD);
 
-
         if (rank == 0) {
             Force* dati = initializeForceVector(graph);
-            for (int i = 1; i < size; i++) {
-                MPI_Recv(dati, graph.node_count* sizeof(Force), MPI_BYTE, i, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-                for (int j = 0; j < graph.node_count; j++) {
+            // Buffer per ricevere tutte le forze dai processi
+            Force* all_forces = malloc(size * graph.node_count * sizeof(Force));
 
-                    net_forces[j].x +=dati[j].x;
-                    net_forces[j].y +=dati[j].y;
+            // Raccogliere le forze da tutti i processi
+            MPI_Gather(net_forces, graph.node_count * sizeof(Force), MPI_BYTE,
+                       all_forces, graph.node_count * sizeof(Force), MPI_BYTE,
+                       0, MPI_COMM_WORLD);
+
+            // Sommare le forze ricevute
+            for (int i = 0; i < size; i++) {
+                for (int j = 0; j < graph.node_count; j++) {
+                    net_forces[j].x += all_forces[i * graph.node_count + j].x;
+                    net_forces[j].y += all_forces[i * graph.node_count + j].y;
                 }
             }
+
             moveNodes(net_forces, &graph, 0, graph.node_count);
+
+            // Liberare la memoria allocata
+            free(all_forces);
         } else {
-            MPI_Ssend(net_forces, graph.node_count* sizeof(Force), MPI_BYTE, 0, 0, MPI_COMM_WORLD);
+            // Invio delle forze al processo radice
+            MPI_Gather(net_forces, graph.node_count * sizeof(Force), MPI_BYTE,
+                       NULL, graph.node_count * sizeof(Force), MPI_BYTE,
+                       0, MPI_COMM_WORLD);
         }
+
         MPI_Barrier(MPI_COMM_WORLD);
         free(net_forces);
         MPI_Barrier(MPI_COMM_WORLD);
