@@ -169,6 +169,7 @@ int main(int argc, char* argv[]) {
                         NULL, NULL, NULL, MPI_BYTE,
                         0, MPI_COMM_WORLD);
         }
+        MPI_Barrier(MPI_COMM_WORLD);
         // Controllo della temperatura
         if (temperature > 1.0) {
             temperature *= TEMPERATURE_DECAY_RATE;
